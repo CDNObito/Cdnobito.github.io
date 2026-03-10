@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRAILLOG — Walk Tracker</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c0f;
+    --panel: #111418;
+    --border: #1e2530;
+    --accent: #00ff87;
+    --accent2: #ff6b35;
+    --text: #e8edf3;
+    --muted: #5a6475;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    flex-shrink: 0;
+    z-index: 1000;
+  }
+  .logo {
+    font-family: 'Space Mono', monospace;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+  }
+  .logo span { color: var(--muted); }
+  .status-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s;
+  }
+  .status-dot.active {
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  .app-body { display: flex; flex: 1; overflow: hidden; }
+  .sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    z-index: 500;
+  }
+  .stat-block { padding: 20px; border-bottom: 1px solid var(--border); }
+  .stat-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .stat-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+  }
+  .stat-value span { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+  .stat-value.highlight { color: var(--accent); }
+  .controls { padding: 20px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+  .btn {
+    width: 100%;
+    padding: 13px 16px;
+    border: none;
+    border-radius: 6px;
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+  }
+  .btn-start { background: var(--accent); color: #000; }
+  .btn-start:hover:not(:disabled) { background: #00e87a; transform: translateY(-1px); }
+  .btn-stop { background: var(--accent2); color: #fff; }
+  .btn-stop:hover:not(:disabled) { background: #e55a28; transform: translateY(-1px); }
+  .btn-clear { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-clear:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
+  .btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+  .timer-display { padding: 16px 20px; border-bottom: 1px solid var(--border); text-align: center; }
+  .timer-label { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
+  .timer-value { font-family: 'Space Mono', monospace; font-size: 36px; font-weight: 700; color: var(--text); letter-spacing: 0.05em; }
+  .coord-stream { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .coord-stream .stat-label { margin-bottom: 8px; }
+  .coord-item {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    padding: 3px 0;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+  }
+  .coord-item:last-child { border: none; }
+  .coord-item .acc { color: var(--accent); font-size: 9px; }
+  .waypoints { padding: 16px 20px; flex: 1; }
+  .waypoints .stat-label { margin-bottom: 10px; }
+  .waypoint-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .waypoint-num {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #000;
+    font-size: 9px;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .waypoint-coords { color: var(--text); font-size: 9px; line-height: 1.6; }
+  .empty-state { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--muted); text-align: center; padding: 20px 0; line-height: 1.8; }
+  #map { flex: 1; background: #0d1117; }
+  .map-wrapper { position: relative; flex: 1; display: flex; flex-direction: column; }
+  .map-overlay {
+    position: absolute;
+    bottom: 20px; right: 20px;
+    z-index: 1000;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    pointer-events: none;
+  }
+  .map-overlay .live { color: var(--accent); font-size: 9px; letter-spacing: 0.1em; margin-bottom: 4px; }
+  .map-overlay .coords { color: var(--text); font-size: 11px; }
+  .toast {
+    position: fixed;
+    bottom: 30px; left: 50%;
+    transform: translateX(-50%) translateY(60px);
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    z-index: 9999;
+    transition: transform 0.3s ease;
+    pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .leaflet-tile-pane { filter: brightness(0.65) saturate(1.2) hue-rotate(180deg) invert(1); }
+  @media (max-width: 600px) {
+    .sidebar { width: 100%; height: auto; max-height: 40dvh; }
+    .app-body { flex-direction: column; }
+    #map { min-height: 60dvh; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">TRAIL<span>LOG</span></div>
+  <div class="status-badge">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">IDLE</span>
+  </div>
+</header>
+
+<div class="app-body">
+  <aside class="sidebar">
+    <div class="timer-display">
+      <div class="timer-label">Elapsed Time</div>
+      <div class="timer-value" id="timerDisplay">00:00:00</div>
+    </div>
+    <div style="display:flex;">
+      <div class="stat-block" style="flex:1; border-right:1px solid var(--border);">
+        <div class="stat-label">Distance</div>
+        <div class="stat-value highlight" id="distDisplay">0.00<span>km</span></div>
+      </div>
+      <div class="stat-block" style="flex:1;">
+        <div class="stat-label">Points</div>
+        <div class="stat-value" id="pointsDisplay">0</div>
+      </div>
+    </div>
+    <div style="display:flex;">
+      <div class="stat-block" style="flex:1; border-right:1px solid var(--border);">
+        <div class="stat-label">Avg Speed</div>
+        <div class="stat-value" id="speedDisplay">—<span>km/h</span></div>
+      </div>
+      <div class="stat-block" style="flex:1;">
+        <div class="stat-label">Accuracy</div>
+        <div class="stat-value" id="accDisplay">—<span>m</span></div>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="btn btn-start" id="btnStart" onclick="startTracking()">⬤ Start Walk</button>
+      <button class="btn btn-stop" id="btnStop" onclick="stopTracking()" disabled>■ Stop Walk</button>
+      <button class="btn btn-clear" id="btnClear" onclick="clearTrack()" disabled>↺ Clear Track</button>
+    </div>
+    <div class="coord-stream">
+      <div class="stat-label">Recent Coordinates</div>
+      <div id="coordStream"><div class="empty-state">No GPS data yet</div></div>
+    </div>
+    <div class="waypoints">
+      <div class="stat-label">Waypoints</div>
+      <div id="waypointList"><div class="empty-state">Start walking to<br>record waypoints</div></div>
+    </div>
+  </aside>
+
+  <div class="map-wrapper">
+    <div id="map"></div>
+    <div class="map-overlay" id="mapOverlay" style="display:none;">
+      <div class="live">⬤ LIVE POSITION</div>
+      <div class="coords" id="liveCoords">—</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let tracking = false, watchId = null, positions = [];
+let startTime = null, timerInterval = null, totalDist = 0;
+let polyline = null, currentMarker = null, startMarker = null;
+
+const map = L.map('map', { center: [51.505, -0.09], zoom: 15, zoomControl: true });
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap', maxZoom: 19
+}).addTo(map);
+
+function makeIcon(color, size = 14) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:${size}px;height:${size}px;background:${color};border-radius:50%;border:2px solid #000;box-shadow:0 0 10px ${color}90;"></div>`,
+    iconSize: [size, size], iconAnchor: [size/2, size/2]
+  });
+}
+
+function startTracking() {
+  if (!navigator.geolocation) { showToast('GPS not supported'); return; }
+  tracking = true; positions = []; totalDist = 0; startTime = Date.now();
+  updateUI(true); startTimer();
+  navigator.geolocation.getCurrentPosition(p => map.setView([p.coords.latitude, p.coords.longitude], 17), null, { enableHighAccuracy: true });
+  watchId = navigator.geolocation.watchPosition(onPosition, onError, { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 });
+  showToast('Tracking started — walk!');
+}
+
+function stopTracking() {
+  if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  tracking = false; clearInterval(timerInterval); updateUI(false);
+  showToast('Walk complete — ' + (totalDist/1000).toFixed(2) + ' km recorded');
+}
+
+function clearTrack() {
+  positions = []; totalDist = 0; startTime = null;
+  if (polyline) { map.removeLayer(polyline); polyline = null; }
+  if (currentMarker) { map.removeLayer(currentMarker); currentMarker = null; }
+  if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
+  document.getElementById('distDisplay').innerHTML = '0.00<span>km</span>';
+  document.getElementById('pointsDisplay').textContent = '0';
+  document.getElementById('speedDisplay').innerHTML = '—<span>km/h</span>';
+  document.getElementById('accDisplay').innerHTML = '—<span>m</span>';
+  document.getElementById('timerDisplay').textContent = '00:00:00';
+  document.getElementById('coordStream').innerHTML = '<div class="empty-state">No GPS data yet</div>';
+  document.getElementById('waypointList').innerHTML = '<div class="empty-state">Start walking to<br>record waypoints</div>';
+  document.getElementById('mapOverlay').style.display = 'none';
+  document.getElementById('btnClear').disabled = true;
+  showToast('Track cleared');
+}
+
+function onPosition(pos) {
+  const { latitude: lat, longitude: lng, accuracy, speed } = pos.coords;
+  if (positions.length > 0) {
+    const prev = positions[positions.length-1];
+    totalDist += haversine(prev[0], prev[1], lat, lng);
+  }
+  positions.push([lat, lng]);
+
+  if (!polyline) {
+    polyline = L.polyline(positions, { color: '#00ff87', weight: 4, opacity: 0.9, lineCap: 'round' }).addTo(map);
+  } else { polyline.setLatLngs(positions); }
+
+  if (!startMarker && positions.length === 1)
+    startMarker = L.marker([lat,lng], { icon: makeIcon('#ff6b35', 14) }).bindPopup('Start').addTo(map);
+
+  if (currentMarker) map.removeLayer(currentMarker);
+  currentMarker = L.marker([lat,lng], { icon: makeIcon('#00ff87', 14) }).bindPopup('You are here').addTo(map);
+  map.panTo([lat, lng]);
+
+  const km = totalDist / 1000;
+  const elapsed = (Date.now() - startTime) / 3600000;
+  const avg = elapsed > 0 ? (km / elapsed).toFixed(1) : '—';
+
+  document.getElementById('distDisplay').innerHTML = km.toFixed(2) + '<span>km</span>';
+  document.getElementById('pointsDisplay').textContent = positions.length;
+  document.getElementById('speedDisplay').innerHTML = avg + '<span>km/h</span>';
+  document.getElementById('accDisplay').innerHTML = Math.round(accuracy) + '<span>m</span>';
+
+  const coordEl = document.getElementById('coordStream');
+  coordEl.innerHTML = positions.slice(-4).reverse().map((p, i) =>
+    `<div class="coord-item"><span>${p[0].toFixed(5)}, ${p[1].toFixed(5)}</span>${i===0?'<span class="acc">±'+Math.round(accuracy)+'m</span>':''}</div>`
+  ).join('');
+
+  const wps = [];
+  const step = Math.max(1, Math.floor(positions.length/8));
+  for (let i = 0; i < positions.length; i += step) wps.push({n:i+1, p:positions[i]});
+  if (positions.length > 1) wps.push({n:positions.length, p:positions[positions.length-1]});
+  document.getElementById('waypointList').innerHTML = wps.slice(-8).map(w =>
+    `<div class="waypoint-item"><div class="waypoint-num">${w.n}</div><div class="waypoint-coords">${w.p[0].toFixed(5)}<br>${w.p[1].toFixed(5)}</div></div>`
+  ).join('');
+
+  document.getElementById('mapOverlay').style.display = 'block';
+  document.getElementById('liveCoords').textContent = lat.toFixed(5) + ', ' + lng.toFixed(5);
+}
+
+function onError(err) {
+  const msgs = ['GPS error', 'Location permission denied', 'Position unavailable', 'GPS timeout'];
+  showToast(msgs[err.code] || 'GPS error');
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000, d2r = Math.PI/180;
+  const dLat = (lat2-lat1)*d2r, dLon = (lon2-lon1)*d2r;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*d2r)*Math.cos(lat2*d2r)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function startTimer() {
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const s = Math.floor((Date.now()-startTime)/1000);
+    document.getElementById('timerDisplay').textContent =
+      String(Math.floor(s/3600)).padStart(2,'0')+':'+String(Math.floor((s%3600)/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+  }, 1000);
+}
+
+function updateUI(on) {
+  document.getElementById('btnStart').disabled = on;
+  document.getElementById('btnStop').disabled = !on;
+  document.getElementById('btnClear').disabled = on;
+  document.getElementById('statusDot').classList.toggle('active', on);
+  document.getElementById('statusText').textContent = on ? 'TRACKING' : (positions.length > 0 ? 'STOPPED' : 'IDLE');
+  if (!on && positions.length > 0) document.getElementById('btnClear').disabled = false;
+}
+
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+navigator.geolocation && navigator.geolocation.getCurrentPosition(
+  p => map.setView([p.coords.latitude, p.coords.longitude], 15), () => {}, { timeout: 5000 }
+);
+</script>
+</body>
+</html>
